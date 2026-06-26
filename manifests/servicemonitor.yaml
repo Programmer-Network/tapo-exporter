@@ -5,6 +5,10 @@ metadata:
   namespace: monitoring
   labels:
     app: tapo-exporter
+    # REQUIRED: this cluster's Prometheus uses serviceMonitorSelector
+    # matchLabels {release: kube-prometheus-stack}. Without it, this SM is
+    # invisible to Prometheus and the exporter is never scraped.
+    release: kube-prometheus-stack
 spec:
   endpoints:
     - interval: 15s

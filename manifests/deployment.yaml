@@ -15,6 +15,12 @@ spec:
       labels:
         app: tapo-exporter
     spec:
+      # The Tapo plug VLAN (192.168.10.x) is firewalled to only allow the lenovo
+      # host (192.168.20.106). Pinning here makes the pod's egress SNAT to lenovo's
+      # IP, so it can reach the plugs without any firewall change. Other nodes/pods
+      # cannot reach the plugs.
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker-lenovo.cluster
       containers:
         - name: exporter
           image: ghcr.io/programmer-network/tapo-exporter:latest

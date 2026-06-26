@@ -26,7 +26,7 @@ Designed for the Programmer Network homelab k3s cluster, deployed via ArgoCD app
 ### Vault Secret
 
 ```bash
-vault kv put kv-v2/tapo username="agrbicpp@gmail.com" password="<tapo-password>"
+vault kv put kv-v2/tapo username="<tapo-account-email>" password="<tapo-password>"
 ```
 
 ### ArgoCD
@@ -42,7 +42,7 @@ vault kv put kv-v2/tapo username="agrbicpp@gmail.com" password="<tapo-password>"
 pip install tapo prometheus-client
 
 # Set credentials
-export KASA_USERNAME="agrbicpp@gmail.com"
+export KASA_USERNAME="<tapo-account-email>"
 export KASA_PASSWORD="..."
 
 # Run

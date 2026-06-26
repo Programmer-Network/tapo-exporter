@@ -6,7 +6,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # ghcr/OCI reference names must be lowercase; ${{ github.repository }} is
+  # "Programmer-Network/tapo-exporter" (mixed case) and was failing the build.
+  IMAGE_NAME: programmer-network/tapo-exporter
 
 jobs:
   build:
