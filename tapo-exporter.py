@@ -71,10 +71,11 @@ class PlugPoller:
                 self.device = await asyncio.wait_for(self.client.p110(self.host), OP_TIMEOUT)
             info = await asyncio.wait_for(self.device.get_device_info(), OP_TIMEOUT)
             energy = await asyncio.wait_for(self.device.get_energy_usage(), OP_TIMEOUT)
+            power = await asyncio.wait_for(self.device.get_current_power(), OP_TIMEOUT)
 
             metric_up.labels(**labels).set(1)
             metric_state.labels(**labels).set(1 if info.device_on else 0)
-            metric_power.labels(**labels).set(energy.current_power / 1000.0)   # mW -> W
+            metric_power.labels(**labels).set(power.current_power)             # already in watts
             metric_rssi.labels(**labels).set(info.rssi)
             metric_on_since.labels(**labels).set(info.on_time)
             metric_today.labels(**labels).set(energy.today_energy / 1000.0)    # Wh -> kWh
