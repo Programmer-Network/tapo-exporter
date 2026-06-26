@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tapo-exporter
+  namespace: monitoring
+  labels:
+    app: tapo-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tapo-exporter
+  template:
+    metadata:
+      labels:
+        app: tapo-exporter
+    spec:
+      containers:
+        - name: exporter
+          image: ghcr.io/programmer-network/tapo-exporter:latest
+          ports:
+            - name: metrics
+              containerPort: 9801
+          env:
+            - name: KASA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: tapo-credentials
+                  key: username
+            - name: KASA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tapo-credentials
+                  key: password
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 50m
+            limits:
+              memory: 128Mi
+              cpu: 200m
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 15

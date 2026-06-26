@@ -1,0 +1,22 @@
+# Add this to the argocd-app-of-apps repo under apps/observability/
+# and register it in root-projects-app.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tapo-exporter
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: observability
+  source:
+    repoURL: https://github.com/Programmer-Network/tapo-exporter.git
+    targetRevision: main
+    path: manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
