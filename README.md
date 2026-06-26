@@ -26,7 +26,7 @@ Designed for the Programmer Network homelab k3s cluster, deployed via ArgoCD app
 ### Vault Secret
 
 ```bash
-vault kv put secret/tapo username="<tapo-account-email>" password="<tapo-password>"
+vault kv put secret/monitoring/tapo username="<tapo-account-email>" password="<tapo-password>"
 ```
 
 ### ArgoCD
