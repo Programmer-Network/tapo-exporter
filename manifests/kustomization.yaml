@@ -6,3 +6,4 @@ resources:
   - service.yaml
   - servicemonitor.yaml
   - vault-static-secret.yaml
+  - vault-static-secret-ghcr.yaml
