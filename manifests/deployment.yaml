@@ -21,6 +21,11 @@ spec:
       # cannot reach the plugs.
       nodeSelector:
         kubernetes.io/hostname: k3s-worker-lenovo.cluster
+      # The org disallows public packages, so the image stays private on ghcr.
+      # This secret holds a GitHub token with read:packages (created out-of-band /
+      # via Vault — not committed).
+      imagePullSecrets:
+        - name: ghcr-pull
       containers:
         - name: exporter
           image: ghcr.io/programmer-network/tapo-exporter:latest
