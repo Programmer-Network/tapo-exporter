@@ -3,6 +3,8 @@ name: Build and Push
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
@@ -11,7 +13,22 @@ env:
   IMAGE_NAME: programmer-network/tapo-exporter
 
 jobs:
+  # The poller talks to real hardware, so the only thing worth testing is its
+  # error handling — and that is exactly where the ~50% poll-success bug lived.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --no-cache-dir prometheus-client==0.21.1
+      - run: python3 test_poller.py
+
   build:
+    needs: test
+    # Pull requests only validate; publishing :latest happens on main.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
