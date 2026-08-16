@@ -13,9 +13,10 @@ import asyncio
 import logging
 import os
 import sys
+import time
 
 from tapo import ApiClient
-from prometheus_client import CollectorRegistry, Gauge, start_http_server
+from prometheus_client import CollectorRegistry, Counter, Gauge, start_http_server
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +42,12 @@ metric_rssi     = Gauge("tapo_plug_rssi_dbm",         "Wi-Fi signal strength in 
 metric_on_since = Gauge("tapo_plug_on_since_seconds", "Seconds since powered on",     ["plug"], registry=registry)
 metric_today    = Gauge("tapo_plug_energy_today_kwh", "Energy today in kWh",          ["plug"], registry=registry)
 metric_month    = Gauge("tapo_plug_energy_month_kwh", "Energy this month in kWh",     ["plug"], registry=registry)
+# On failure the gauges above keep their last good values rather than going
+# stale-but-plausible in silence. This is how a consumer tells the difference:
+# time() - tapo_plug_last_success_seconds is the true age of every reading.
+metric_last_ok  = Gauge("tapo_plug_last_success_seconds", "Unix time of the last successful poll", ["plug"], registry=registry)
+metric_reauths  = Counter("tapo_plug_reauth_total",   "Mid-poll re-handshakes after a dropped session", ["plug"], registry=registry)
+metric_fails    = Counter("tapo_plug_poll_failures_total", "Polls that failed even after a re-handshake", ["plug"], registry=registry)
 
 
 def load_plugs() -> dict:
@@ -56,22 +63,45 @@ def load_plugs() -> dict:
 
 
 class PlugPoller:
-    """Holds a reused device session per plug; re-handshakes only on error."""
+    """Holds a reused device session per plug, re-handshaking in place on error.
 
-    def __init__(self, client: ApiClient, name: str, host: str):
-        self.client = client
+    Each poller owns its own ApiClient. Sharing one across plugs makes their
+    handshakes race — the plugs answer 403 Forbidden for every request carrying
+    a session another plug's handshake has since superseded.
+    """
+
+    def __init__(self, user: str, password: str, name: str, host: str):
+        self.client = ApiClient(user, password)
         self.name = name
         self.host = host
         self.device = None
 
+    async def _read(self):
+        """One full read against the current session, handshaking if needed."""
+        if self.device is None:
+            self.device = await asyncio.wait_for(self.client.p110(self.host), OP_TIMEOUT)
+        info = await asyncio.wait_for(self.device.get_device_info(), OP_TIMEOUT)
+        energy = await asyncio.wait_for(self.device.get_energy_usage(), OP_TIMEOUT)
+        power = await asyncio.wait_for(self.device.get_current_power(), OP_TIMEOUT)
+        return info, energy, power
+
     async def poll(self):
         labels = {"plug": self.name}
         try:
-            if self.device is None:
-                self.device = await asyncio.wait_for(self.client.p110(self.host), OP_TIMEOUT)
-            info = await asyncio.wait_for(self.device.get_device_info(), OP_TIMEOUT)
-            energy = await asyncio.wait_for(self.device.get_energy_usage(), OP_TIMEOUT)
-            power = await asyncio.wait_for(self.device.get_current_power(), OP_TIMEOUT)
+            try:
+                info, energy, power = await self._read()
+            except Exception as first:
+                # A dropped session is the overwhelmingly common failure here and
+                # it is recoverable immediately — the plug is fine, our token is
+                # not. Retrying on the NEXT cycle instead of this one is what
+                # pinned poll success at ~50%: every session survived exactly one
+                # poll, so the loop alternated success, expiry, re-handshake,
+                # expiry, forever. Reconnect and retry once, in place.
+                log.info("session lost for plug %s (%s): %s — re-handshaking",
+                         self.name, self.host, first)
+                metric_reauths.labels(**labels).inc()
+                self.device = None
+                info, energy, power = await self._read()
 
             metric_up.labels(**labels).set(1)
             metric_state.labels(**labels).set(1 if info.device_on else 0)
@@ -80,10 +110,16 @@ class PlugPoller:
             metric_on_since.labels(**labels).set(info.on_time)
             metric_today.labels(**labels).set(energy.today_energy / 1000.0)    # Wh -> kWh
             metric_month.labels(**labels).set(energy.month_energy / 1000.0)    # Wh -> kWh
+            metric_last_ok.labels(**labels).set(time.time())
         except Exception as e:
+            # Both the original attempt and the retry failed, so this is not a
+            # stale session — the plug is genuinely unreachable, off the Wi-Fi,
+            # or the credentials are wrong.
             metric_up.labels(**labels).set(0)
+            metric_fails.labels(**labels).inc()
             self.device = None  # force a fresh handshake next cycle
-            log.warning("poll failed for plug %s (%s): %s", self.name, self.host, e)
+            log.warning("poll failed for plug %s (%s) after re-handshake: %s",
+                        self.name, self.host, e)
 
 
 async def poll_loop(pollers, interval: int):
@@ -105,8 +141,7 @@ def main():
         sys.exit(1)
 
     plugs = load_plugs()
-    client = ApiClient(user, password)
-    pollers = [PlugPoller(client, name, host) for name, host in plugs.items()]
+    pollers = [PlugPoller(user, password, name, host) for name, host in plugs.items()]
 
     # Start the HTTP server FIRST (daemon thread) so /metrics — and thus the k8s
     # readiness probe — is serving immediately, even if the plugs are unreachable.
